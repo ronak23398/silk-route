@@ -24,6 +24,9 @@ class ShopController extends GetxController {
   // Filter states
   final RxString orderStatusFilter = OrderStatus.pending.value.obs;
   
+  // KYC status
+  final kycSubmitted = false.obs;
+  
   // Form controllers for adding/editing items
   final TextEditingController nameController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
@@ -50,92 +53,80 @@ class ShopController extends GetxController {
   }
   
   // Load current shop profile
- // Load current shop profile
-Future<void> fetchShopData() async {
-  isLoadingShop.value = true;
+  Future<void> fetchShopData() async {
+    isLoadingShop.value = true;
   
-  try {
-    // FIXED: Properly await the Future to get the UserModel
-    final currentUser = await _supabaseService.getCurrentUser();
-    if (currentUser == null) {
-      Helpers.showSnackbar('Error', 'User not logged in', isError: true);
+    try {
+      final currentUser = await _supabaseService.getCurrentUser();
+      if (currentUser == null) {
+        Helpers.showSnackbar('Error', 'User not logged in', isError: true);
+        isLoadingShop.value = false;
+        return;
+      }
+      
+      final shopData = await _supabaseService.fetchShopByUserId(currentUser.id);
+      if (shopData != null) {
+        shop.value = shopData;
+        await fetchItems();
+        await fetchOrders();
+      } else {
+        debugPrint('No shop data found for current user');
+      }
+    } catch (e) {
+      debugPrint('Error in fetchShopData: ${e.toString()}');
+      Helpers.showSnackbar('Error', 'Failed to load shop data: ${e.toString()}', isError: true);
+    } finally {
       isLoadingShop.value = false;
-      return;
     }
-    
-    final shopData = await _supabaseService.fetchShopByUserId(currentUser.id);
-    if (shopData != null) {
-      shop.value = shopData;
-      // Once shop data is loaded, fetch the items and orders
-      await fetchItems();
-      await fetchOrders();
-    } else {
-      debugPrint('No shop data found for current user');
-    }
-  } catch (e) {
-    debugPrint('Error in fetchShopData: ${e.toString()}');
-    Helpers.showSnackbar('Error', 'Failed to load shop data: ${e.toString()}', isError: true);
-  } finally {
-    isLoadingShop.value = false;
   }
-}
-  
   
   // Fixed updateOrderStatus method with correct parameter types
   Future<void> updateOrderStatus(OrderModel order, String newStatus) async {
-  if (shop.value == null) {
-    Helpers.showSnackbar('Error', 'Shop data not available', isError: true);
-    return;
-  }
+    isProcessing.value = true;
   
-  isProcessing.value = true;
-  
-  try {
-    DateTime? acceptedAt;
-    DateTime? deliveredAt;
-    
-    if (newStatus == OrderStatus.accepted.value) {
-      acceptedAt = DateTime.now();
-    } else if (newStatus == OrderStatus.delivered.value) {
-      deliveredAt = DateTime.now();
-    }
-    
-    final updatedOrder = order.copyWith(
-      status: newStatus,
-      acceptedAt: acceptedAt ?? order.acceptedAt,
-      deliveredAt: deliveredAt ?? order.deliveredAt,
-    );
-    
-    // FIXED: Passing just the order ID instead of the whole order object
-    final success = await _supabaseService.updateOrderStatus(updatedOrder.id, newStatus);
-    
-    if (success) {
-      final index = orders.indexWhere((element) => element.id == order.id);
-      if (index != -1) {
-        // Update the order in the local list with the modified copy
-        orders[index] = updatedOrder;
+    try {
+      DateTime? acceptedAt;
+      DateTime? deliveredAt;
+      
+      if (newStatus == OrderStatus.accepted.value) {
+        acceptedAt = DateTime.now();
+      } else if (newStatus == OrderStatus.delivered.value) {
+        deliveredAt = DateTime.now();
       }
-      Helpers.showSnackbar('Success', 'Order status updated successfully');
-    } else {
-      Helpers.showSnackbar('Error', 'Failed to update order status', isError: true);
+      
+      final updatedOrder = order.copyWith(
+        status: newStatus,
+        acceptedAt: acceptedAt ?? order.acceptedAt,
+        deliveredAt: deliveredAt ?? order.deliveredAt,
+      );
+      
+      final success = await _supabaseService.updateOrderStatus(updatedOrder.id, newStatus);
+      
+      if (success) {
+        final index = orders.indexWhere((element) => element.id == order.id);
+        if (index != -1) {
+          orders[index] = updatedOrder;
+        }
+        Helpers.showSnackbar('Success', 'Order status updated successfully');
+      } else {
+        Helpers.showSnackbar('Error', 'Failed to update order status', isError: true);
+      }
+    } catch (e) {
+      debugPrint('Error in updateOrderStatus: ${e.toString()}');
+      Helpers.showSnackbar('Error', 'Failed to update order status: ${e.toString()}', isError: true);
+    } finally {
+      isProcessing.value = false;
     }
-  } catch (e) {
-    debugPrint('Error in updateOrderStatus: ${e.toString()}');
-    Helpers.showSnackbar('Error', 'Failed to update order status: ${e.toString()}', isError: true);
-  } finally {
-    isProcessing.value = false;
   }
-}
   
   // Load item catalog
   Future<void> fetchItems() async {
-    if (shop.value == null) return;
-    
     isLoadingItems.value = true;
     
     try {
-      final itemsList = await _supabaseService.fetchItemsByShopId(shop.value!.id);
-      items.value = itemsList;
+      final response = await _supabaseService.fetchItemsByShopId(shop.value!.id);
+      items.clear();
+      items.addAll(response.map((item) => ItemModel.fromJson(item as Map<String, dynamic>)));
     } catch (e) {
       debugPrint('Error in fetchItems: ${e.toString()}');
       Helpers.showSnackbar('Error', 'Failed to load items: ${e.toString()}', isError: true);
@@ -188,11 +179,6 @@ Future<void> fetchShopData() async {
   
   // Edit existing product
   Future<void> updateItem(ItemModel item) async {
-    if (shop.value == null) {
-      Helpers.showSnackbar('Error', 'Shop data not available', isError: true);
-      return;
-    }
-    
     if (!_validateItemForm()) {
       return;
     }
@@ -230,11 +216,6 @@ Future<void> fetchShopData() async {
   
   // Remove product
   Future<void> deleteItem(String itemId) async {
-    if (shop.value == null) {
-      Helpers.showSnackbar('Error', 'Shop data not available', isError: true);
-      return;
-    }
-    
     isProcessing.value = true;
     
     try {
@@ -255,13 +236,12 @@ Future<void> fetchShopData() async {
   
   // Load incoming orders
   Future<void> fetchOrders() async {
-    if (shop.value == null) return;
-    
     isLoadingOrders.value = true;
     
     try {
-      final ordersList = await _supabaseService.fetchOrdersForShop(shop.value!.id);
-      orders.value = ordersList;
+      final response = await _supabaseService.fetchOrdersForShop(shop.value!.id);
+      orders.clear();
+      orders.addAll(response.map((order) => OrderModel.fromJson(order as Map<String, dynamic>)));
     } catch (e) {
       debugPrint('Error in fetchOrders: ${e.toString()}');
       Helpers.showSnackbar('Error', 'Failed to load orders: ${e.toString()}', isError: true);
@@ -354,4 +334,27 @@ Future<void> fetchShopData() async {
   int get inProgressOrdersCount => orders.where((order) => order.status == OrderStatus.inProgress.value).length;
   int get totalItemsCount => items.length;
   int get outOfStockItemsCount => items.where((item) => item.stock <= 0).length;
+  
+  Future<bool> submitKYC(String shopId, Map<String, dynamic> kycData) async {
+    try {
+      await _supabaseService.submitKYC(shopId, kycData);
+      return true;
+    } catch (e) {
+      print('Error submitting KYC: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateKYCDocuments(String shopId, Map<String, dynamic> documents) async {
+    try {
+      final success = await _supabaseService.updateKYCDocuments(shopId, documents);
+      if (success) {
+        kycSubmitted.value = true;
+      }
+      return success;
+    } catch (e) {
+      print('Error updating KYC documents: $e');
+      return false;
+    }
+  }
 }

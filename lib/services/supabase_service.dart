@@ -114,34 +114,14 @@ class SupabaseService {
     }
   }
   
-  // ADDED METHOD: Fetch shops by status
-  Future<List<ShopModel>> fetchShopsByStatus(String status) async {
-    try {
-      final response = await _supabase
-          .from(Constants.shopsTable)
-          .select()
-          .eq('status', status)
-          .order('created_at', ascending: false);
-      
-      if (response != null && response.isNotEmpty) {
-        return (response as List).map((shop) => ShopModel.fromJson(shop)).toList();
-      }
-      return [];
-    } catch (e) {
-      debugPrint('Error in fetchShopsByStatus: $e');
-      return [];
-    }
-  }
-  
-  // ADDED METHOD: Fetch all shops
+  // Fetch all shops
   Future<List<ShopModel>> fetchAllShops() async {
     try {
       final response = await _supabase
           .from(Constants.shopsTable)
-          .select()
-          .order('created_at', ascending: false);
+          .select();
       
-      if (response != null && response.isNotEmpty) {
+      if (response.isNotEmpty) {
         return (response as List).map((shop) => ShopModel.fromJson(shop)).toList();
       }
       return [];
@@ -150,165 +130,42 @@ class SupabaseService {
       return [];
     }
   }
-  
-  // ADDED METHOD: Update shop status
-  Future<bool> updateShopStatus(String shopId, String status) async {
-    try {
-      await _supabase
-          .from(Constants.shopsTable)
-          .update({
-            'status': status,
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', shopId);
-      
-      return true;
-    } catch (e) {
-      debugPrint('Error in updateShopStatus: $e');
-      return false;
-    }
-  }
-  
-  Future<ShopModel?> submitKYC(
-    ShopModel shop, {
-    required String shopImagePath,
-    required String idProofPath,
-    required String businessLicensePath,
-  }) async {
-    try {
-      String? shopImageUrl;
-      String? idProofUrl;
-      String? businessLicenseUrl;
-      
-      // Upload shop image
-      if (shopImagePath.isNotEmpty) {
-        final imagePath = 'shops/${shop.ownerId}/shop_image.jpg';
-        shopImageUrl = await uploadImage(shopImagePath, imagePath);
-      }
-      
-      // Upload ID proof
-      if (idProofPath.isNotEmpty) {
-        final imagePath = 'shops/${shop.ownerId}/id_proof.jpg';
-        idProofUrl = await uploadImage(idProofPath, imagePath);
-      }
-      
-      // Upload business license
-      if (businessLicensePath.isNotEmpty) {
-        final imagePath = 'shops/${shop.ownerId}/business_license.jpg';
-        businessLicenseUrl = await uploadImage(businessLicensePath, imagePath);
-      }
-      
-      // Check if shop already exists
-      final existingShop = await fetchShopByUserId(shop.ownerId);
-      ShopModel updatedShop;
-      
-      if (existingShop != null) {
-        // Update existing shop
-        updatedShop = existingShop.copyWith(
-          name: shop.name,
-          description: shop.description,
-          address: shop.address,
-          city: shop.city,
-          phone: shop.phone,
-          status: ShopStatus.pending.value,
-          imageUrl: shopImageUrl ?? existingShop.imageUrl,
-          updatedAt: DateTime.now(),
-        );
-        
-        await _supabase
-            .from(Constants.shopsTable)
-            .update(updatedShop.toJson())
-            .eq('id', existingShop.id);
-            
-        // Store document URLs in a separate table if needed
-        // ...
-        
-        return updatedShop;
-      } else {
-        // Create new shop
-        final uuid = const Uuid();
-        final newShop = shop.copyWith(
-          id: uuid.v4(),
-          status: ShopStatus.pending.value,
-          createdAt: DateTime.now(),
-          imageUrl: shopImageUrl,
-        );
-        
-        await _supabase
-            .from(Constants.shopsTable)
-            .insert(newShop.toJson());
-            
-        // Store document URLs in a separate table if needed
-        // ...
-        
-        return newShop;
-      }
-    } catch (e) {
-      print('Error submitting KYC: $e');
-      return null;
-    }
-  }
-  
-  // Product catalog methods
-  Future<List<ItemModel>> fetchItemsByShopId(String shopId) async {
+
+  // Fetch shops by status
+  Future<List<ShopModel>> fetchShopsByStatus(String status) async {
     try {
       final response = await _supabase
-          .from(Constants.itemsTable)
+          .from(Constants.shopsTable)
           .select()
-          .eq('shop_id', shopId)
-          .order('created_at', ascending: false);
+          .eq('status', status);
       
-      if (response != null && response.isNotEmpty) {
-        return (response as List).map((item) => ItemModel.fromJson(item)).toList();
+      if (response.isNotEmpty) {
+        return (response as List).map((shop) => ShopModel.fromJson(shop)).toList();
       }
       return [];
     } catch (e) {
-      print('Error fetching items: $e');
+      debugPrint('Error in fetchShopsByStatus: $e');
       return [];
     }
   }
-  
-  Future<bool> addItemToCatalog(ItemModel item) async {
+
+  // Fetch orders by date range for analytics
+  Future<List<OrderModel>> fetchOrdersByDateRange(DateTime start, DateTime end) async {
     try {
-      final uuid = const Uuid();
-      final newItem = item.copyWith(
-        id: uuid.v4(),
-        createdAt: DateTime.now(),
-      );
+      final response = await _supabase
+          .from(Constants.ordersTable)
+          .select()
+          .gte('created_at', start.toIso8601String())
+          .lte('created_at', end.toIso8601String())
+          .order('created_at', ascending: false);
       
-      await _supabase.from(Constants.itemsTable).insert(newItem.toJson());
-      return true;
+      if (response.isNotEmpty) {
+        return (response as List).map((order) => OrderModel.fromJson(order)).toList();
+      }
+      return [];
     } catch (e) {
-      print('Error adding item: $e');
-      return false;
-    }
-  }
-  
-  Future<bool> updateItemInCatalog(ItemModel item) async {
-    try {
-      final updatedItem = item.copyWith(
-        updatedAt: DateTime.now(),
-      );
-      
-      await _supabase
-          .from(Constants.itemsTable)
-          .update(updatedItem.toJson())
-          .eq('id', item.id);
-      
-      return true;
-    } catch (e) {
-      print('Error updating item: $e');
-      return false;
-    }
-  }
-  
-  Future<bool> deleteItem(String itemId) async {
-    try {
-      await _supabase.from(Constants.itemsTable).delete().eq('id', itemId);
-      return true;
-    } catch (e) {
-      print('Error deleting item: $e');
-      return false;
+      debugPrint('Error in fetchOrdersByDateRange: $e');
+      return [];
     }
   }
   
@@ -320,7 +177,7 @@ class SupabaseService {
           .select()
           .order('created_at', ascending: false);
       
-      if (response != null && response.isNotEmpty) {
+      if (response.isNotEmpty) {
         return (response as List).map((user) => UserModel.fromJson(user)).toList();
       }
       return [];
@@ -361,7 +218,7 @@ class SupabaseService {
       
       final response = await query.order('created_at', ascending: false);
       
-      if (response != null && response.isNotEmpty) {
+      if (response.isNotEmpty) {
         return (response as List).map((order) => OrderModel.fromJson(order)).toList();
       }
       return [];
@@ -380,7 +237,7 @@ class SupabaseService {
           .order('created_at', ascending: false)
           .limit(limit);
       
-      if (response != null && response.isNotEmpty) {
+      if (response.isNotEmpty) {
         return (response as List).map((order) => OrderModel.fromJson(order)).toList();
       }
       return [];
@@ -425,7 +282,7 @@ class SupabaseService {
           .eq('payment_status', 'paid');
       
       double totalRevenue = 0.0;
-      if (revenueResponse != null && revenueResponse.isNotEmpty) {
+      if (revenueResponse.isNotEmpty) {
         for (var order in revenueResponse) {
           totalRevenue += order['total_amount'] as double;
         }
@@ -506,37 +363,36 @@ class SupabaseService {
           .lte('created_at', endDate.toIso8601String())
           .eq('payment_status', 'paid');
       
-      if (response == null || response.isEmpty) {
-        return [];
-      }
-      
-      // Group orders by date and sum the total amount
-      final Map<String, double> dailySales = {};
-      
-      for (var order in response) {
-        final createdAt = DateTime.parse(order['created_at']);
-        final dateString = '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
+      if (response.isNotEmpty) {
+        // Group orders by date and sum the total amount
+        final Map<String, double> dailySales = {};
         
-        if (dailySales.containsKey(dateString)) {
-          dailySales[dateString] = (dailySales[dateString] ?? 0) + (order['total_amount'] as num).toDouble();
-        } else {
-          dailySales[dateString] = (order['total_amount'] as num).toDouble();
+        for (var order in response) {
+          final createdAt = DateTime.parse(order['created_at']);
+          final dateString = '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}';
+          
+          if (dailySales.containsKey(dateString)) {
+            dailySales[dateString] = (dailySales[dateString] ?? 0) + (order['total_amount'] as num).toDouble();
+          } else {
+            dailySales[dateString] = (order['total_amount'] as num).toDouble();
+          }
         }
-      }
-      
-      // Convert to list of maps
-      final List<Map<String, dynamic>> result = [];
-      dailySales.forEach((date, revenue) {
-        result.add({
-          'date': date,
-          'revenue': revenue,
+        
+        // Convert to list of maps
+        final List<Map<String, dynamic>> result = [];
+        dailySales.forEach((date, revenue) {
+          result.add({
+            'date': date,
+            'revenue': revenue,
+          });
         });
-      });
-      
-      // Sort by date
-      result.sort((a, b) => a['date'].compareTo(b['date']));
-      
-      return result;
+        
+        // Sort by date
+        result.sort((a, b) => a['date'].compareTo(b['date']));
+        
+        return result;
+      }
+      return [];
     } catch (e) {
       debugPrint('Error in fetchDailySalesData: $e');
       return [];
@@ -554,34 +410,141 @@ class SupabaseService {
           .select('city')
           .eq('status', ShopStatus.approved.value);
       
-      if (response == null || response.isEmpty) {
-        return [];
-      }
-      
-      // Count shops by city
-      final Map<String, int> categoryCounts = {};
-      
-      for (var shop in response) {
-        final city = shop['city'] as String;
-        categoryCounts[city] = (categoryCounts[city] ?? 0) + 1;
-      }
-      
-      // Convert to list of maps
-      final List<Map<String, dynamic>> result = [];
-      categoryCounts.forEach((category, count) {
-        result.add({
-          'category': category,
-          'count': count,
+      if (response.isNotEmpty) {
+        // Count shops by city
+        final Map<String, int> categoryCounts = {};
+        
+        for (var shop in response) {
+          final city = shop['city'] as String;
+          categoryCounts[city] = (categoryCounts[city] ?? 0) + 1;
+        }
+        
+        // Convert to list of maps
+        final List<Map<String, dynamic>> result = [];
+        categoryCounts.forEach((category, count) {
+          result.add({
+            'category': category,
+            'count': count,
+          });
         });
-      });
-      
-      return result;
+        
+        return result;
+      }
+      return [];
     } catch (e) {
       debugPrint('Error in fetchShopCategoryDistribution: $e');
       return [];
     }
   }
   
+  // Product catalog methods
+  Future<List<ItemModel>> fetchItemsByShopId(String shopId) async {
+    try {
+      final response = await _supabase
+          .from(Constants.itemsTable)
+          .select()
+          .eq('shop_id', shopId)
+          .order('created_at', ascending: false);
+      
+      if (response.isNotEmpty) {
+        return (response as List).map((item) => ItemModel.fromJson(item)).toList();
+      }
+      return [];
+    } catch (e) {
+      debugPrint('Error fetching items: $e');
+      return [];
+    }
+  }
+
+  Future<bool> addItemToCatalog(ItemModel item) async {
+    try {
+      final uuid = const Uuid();
+      final newItem = item.copyWith(
+        id: uuid.v4(),
+        createdAt: DateTime.now(),
+      );
+      
+      await _supabase.from(Constants.itemsTable).insert(newItem.toJson());
+      return true;
+    } catch (e) {
+      debugPrint('Error adding item: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateItemInCatalog(ItemModel item) async {
+    try {
+      final updatedItem = item.copyWith(
+        updatedAt: DateTime.now(),
+      );
+      
+      await _supabase
+          .from(Constants.itemsTable)
+          .update(updatedItem.toJson())
+          .eq('id', item.id);
+      
+      return true;
+    } catch (e) {
+      debugPrint('Error updating item: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteItem(String itemId) async {
+    try {
+      await _supabase.from(Constants.itemsTable).delete().eq('id', itemId);
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting item: $e');
+      return false;
+    }
+  }
+
+  Future<bool> submitKYC(String userId, Map<String, dynamic> kycData) async {
+    try {
+      await _supabase
+          .from('kyc_verifications')
+          .upsert({
+            'user_id': userId,
+            ...kycData,
+            'updated_at': DateTime.now().toIso8601String(),
+          });
+      return true;
+    } catch (e) {
+      debugPrint('Error submitting KYC: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateKYCDocuments(String shopId, Map<String, dynamic> documents) async {
+    try {
+      await _supabase
+          .from('kyc_verifications')
+          .update({
+            ...documents,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('user_id', shopId);
+      return true;
+    } catch (e) {
+      debugPrint('Error updating KYC documents: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateShopStatus(String shopId, String status) async {
+    try {
+      await _supabase
+          .from(Constants.shopsTable)
+          .update({'status': status, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', shopId);
+      return true;
+    } catch (e) {
+      debugPrint('Error updating shop status: $e');
+      return false;
+    }
+  }
+
   // Storage methods for images
   Future<String?> uploadImage(String filePath, String destination) async {
     try {
@@ -630,7 +593,7 @@ Future<bool> deleteUser(String userId) async {
         .select()
         .eq('owner_id', userId);
     
-    if (shopResponse != null && shopResponse.isNotEmpty) {
+    if (shopResponse.isNotEmpty) {
       // User has shops, delete them first
       for (var shop in shopResponse) {
         final String shopId = shop['id'];

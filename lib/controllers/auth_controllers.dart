@@ -209,37 +209,23 @@ class AuthController extends GetxController {
 
     isLoading(true);
     try {
-      // Create shop model
-      final shop = ShopModel(
-        id: '', // Will be assigned by Supabase
-        ownerId: currentUser.value!.id,
-        name: shopName,
-        address: shopAddress,
-        city: shopCity,
-        description: shopDescription ?? '',
-        phone: shopPhone,
-        status: ShopStatus.pending.value,
-        createdAt: DateTime.now(),
-      );
+      final kycData = {
+        'shopName': shopName,
+        'shopAddress': shopAddress,
+        'shopCity': shopCity,
+        'shopPhone': shopPhone,
+        'shopDescription': shopDescription ?? '',
+        'shopImagePath': shopImagePath.value,
+        'idProofPath': idProofPath.value,
+        'businessLicensePath': businessLicensePath.value,
+      };
 
-      // Submit KYC data to Supabase with document files
-      final createdShop = await _supabaseService.submitKYC(
-        shop,
-        shopImagePath: shopImagePath.value,
-        idProofPath: idProofPath.value,
-        businessLicensePath: businessLicensePath.value,
-      );
-
-      if (createdShop != null) {
-        // Properly set the shop value
-        currentShop.value = createdShop;
+      final success = await _supabaseService.submitKYC(currentUser.value!.id, kycData);
+      if (success) {
+        Get.snackbar('Success', 'KYC submitted successfully');
         Get.offAllNamed(AppRoutes.KYC);
-        showSuccess(
-          'Application Submitted',
-          'Your shop registration is under review.',
-        );
       } else {
-        showError('KYC Error', 'Failed to submit shop registration');
+        Get.snackbar('Error', 'Failed to submit KYC. Please try again.');
       }
     } catch (e) {
       showError('KYC Submission Error', e.toString());

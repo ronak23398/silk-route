@@ -3,8 +3,9 @@ import 'package:get/get.dart';
 import 'package:silk_route/controllers/admin_controller.dart';
 import 'package:silk_route/controllers/auth_controllers.dart';
 import 'package:silk_route/views/admin/admin_analytics_view.dart';
+import 'package:silk_route/views/admin/admin_shop_approval_view.dart';
+import 'package:silk_route/views/admin/admin_shops_view.dart';
 import 'package:silk_route/views/admin/admin_user_management_view.dart';
-import 'package:silk_route/views/admin/shop_approval_view.dart';
 
 class AdminDashboardView extends GetView<AdminController> {
   const AdminDashboardView({super.key});
@@ -18,7 +19,7 @@ class AdminDashboardView extends GetView<AdminController> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () {
-              controller.fetchShops();
+              controller.fetchAllShops();
               controller.fetchPendingShops();
               controller.fetchUsers();
               controller.fetchRecentOrders();
@@ -62,10 +63,10 @@ class AdminDashboardView extends GetView<AdminController> {
           AdminAnalyticsView(),
           
           // Shop Approval View
-          ShopApprovalView(),
+          AdminShopApprovalView(),
           
-          // Shop Management View
-          ShopApprovalView(),
+          // Shops View
+          AdminShopsView(),
           
           // User Management View
           AdminUserManagementView(),

@@ -138,32 +138,61 @@ class ShopApprovalView extends GetView<AdminController> {
                     const SizedBox(width: 12),
                     
                     // Reject Button
-                    OutlinedButton.icon(
-                      onPressed: controller.isProcessing.value 
-                        ? null 
-                        : () => _confirmRejectShop(context, shop),
-                      icon: const Icon(Icons.close, color: Colors.red),
-                      label: const Text(
-                        'Reject',
-                        style: TextStyle(color: Colors.red),
+                    ElevatedButton(
+                      onPressed: () async {
+                        // Show dialog to input rejection reason
+                        final reasonController = TextEditingController();
+                        final reason = await showDialog<String>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: const Text('Reject Shop'),
+                            content: TextField(
+                              controller: reasonController,
+                              decoration: const InputDecoration(hintText: 'Enter rejection reason'),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Cancel'),
+                              ),
+                              TextButton(
+                                onPressed: () {
+                                  Navigator.pop(context, reasonController.text);
+                                },
+                                child: const Text('Submit'),
+                              ),
+                            ],
+                          ),
+                        );
+                        
+                        if (reason != null && reason.isNotEmpty) {
+                          if (await controller.rejectShop(shop.id, reason)) {
+                            controller.fetchPendingShops();
+                            Get.snackbar('Success', 'Shop rejected successfully');
+                          }
+                        }
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.red),
-                      ),
+                      child: const Text('Reject'),
                     ),
                     const SizedBox(width: 12),
                     
                     // Approve Button
-                    ElevatedButton.icon(
-                      onPressed: controller.isProcessing.value 
-                        ? null 
-                        : () => _confirmApproveShop(context, shop),
-                      icon: const Icon(Icons.check),
-                      label: const Text('Approve'),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (await controller.approveShop(shop.id, shop.ownerId)) {
+                          controller.fetchPendingShops();
+                          Get.snackbar('Success', 'Shop approved successfully');
+                        }
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       ),
+                      child: const Text('Approve'),
                     ),
                   ],
                 ),
@@ -185,62 +214,6 @@ class ShopApprovalView extends GetView<AdminController> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(text),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _confirmApproveShop(BuildContext context, ShopModel shop) {
-    Get.dialog(
-      AlertDialog(
-        title: const Text('Approve Shop'),
-        content: Text(
-          'Are you sure you want to approve ${shop.name}? The shop owner will be notified and can start using the platform immediately.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('CANCEL'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Get.back();
-              controller.approveShop(shop.id);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('APPROVE'),
-          ),
-        ],
-      ),
-    );
-  }
-  
-  void _confirmRejectShop(BuildContext context, ShopModel shop) {
-    Get.dialog(
-      AlertDialog(
-        title: const Text('Reject Shop'),
-        content: Text(
-          'Are you sure you want to reject ${shop.name}? The shop owner will be notified and will need to reapply with correct information.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('CANCEL'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              Get.back();
-              controller.rejectShop(shop.id);
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('REJECT'),
           ),
         ],
       ),

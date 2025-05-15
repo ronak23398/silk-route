@@ -4,25 +4,33 @@ import 'package:silk_route/app/models/order_model.dart';
 import 'package:silk_route/app/models/shop_model.dart';
 import 'package:silk_route/app/models/user_model.dart';
 import 'package:silk_route/app/utils/constants.dart';
-import 'package:silk_route/app/utils/helpers.dart';
 import 'package:silk_route/services/supabase_service.dart';
 import 'package:intl/intl.dart';
+import 'package:silk_route/controllers/auth_controllers.dart';
 
 class AdminController extends GetxController with GetTickerProviderStateMixin {
   final SupabaseService _supabaseService = Get.find<SupabaseService>();
   
   // Observable states
   final RxList<ShopModel> shops = <ShopModel>[].obs;
-  final RxList<ShopModel> pendingShops = <ShopModel>[].obs;
+  final RxList<ShopModel> filteredShops = <ShopModel>[].obs;
   final RxList<UserModel> users = <UserModel>[].obs;
   final RxList<OrderModel> recentOrders = <OrderModel>[].obs;
   
   // Loading states
-  final RxBool isLoadingShops = false.obs;
+  final RxBool isLoading = true.obs;
   final RxBool isLoadingUsers = false.obs;
+  final RxBool isLoadingShops = false.obs;
+  final RxBool isLoadingPendingShops = false.obs;
   final RxBool isLoadingOrders = false.obs;
-  final RxBool isProcessing = false.obs;
   final RxBool isLoadingAnalytics = false.obs;
+  final RxBool isProcessing = false.obs;
+  
+  // Data
+  final RxList<UserModel> filteredUsers = <UserModel>[].obs;
+  final RxList<ShopModel> allShops = <ShopModel>[].obs;
+  final RxList<ShopModel> pendingShops = <ShopModel>[].obs;
+  final RxList<ShopModel> topShops = <ShopModel>[].obs;
   
   // Analytics data
   final RxMap<String, dynamic> analytics = <String, dynamic>{}.obs;
@@ -35,7 +43,7 @@ class AdminController extends GetxController with GetTickerProviderStateMixin {
   final RxList<OrderStatusData> orderStatusDistribution = <OrderStatusData>[].obs;
   final RxList<ShopCategoryData> shopCategoryDistribution = <ShopCategoryData>[].obs;
   final RxList<UserGrowthData> userGrowthData = <UserGrowthData>[].obs;
-  final RxList<TopShopData> topShops = <TopShopData>[].obs;
+  final RxList<TopShopData> topShopsData = <TopShopData>[].obs;
   
   // Analytics metrics
   final RxDouble totalRevenue = 0.0.obs;
@@ -57,266 +65,300 @@ class AdminController extends GetxController with GetTickerProviderStateMixin {
   
   // Filter states
   final RxString shopStatusFilter = ShopStatus.pending.value.obs;
+  final RxString selectedShopStatus = ''.obs;
+  final RxInt pendingShopCount = 0.obs;
   final RxString userRoleFilter = ''.obs;
 
   final searchController = TextEditingController();
-final RxString selectedUserRole = ''.obs;
-final RxInt totalUsers = 0.obs;
-final RxInt customerCount = 0.obs;
-final RxInt shopOwnerCount = 0.obs;
+  final RxString selectedUserRole = ''.obs;
+  final RxInt totalUsers = 0.obs;
+  final RxInt customerCount = 0.obs;
+  final RxInt shopOwnerCount = 0.obs;
 
-final RxList<UserModel> filteredUsers = <UserModel>[].obs;
-  
-@override
-void onInit() {
-  super.onInit();
-  tabController = TabController(length: 4, vsync: this);
-  
-  // Initialize filteredUsers with all users
-  filteredUsers.value = users;
-  
-  // Load initial data
-  fetchPendingShops();
-  fetchShops();
-  fetchAllUsers(); // Use this instead of fetchUsers()
-  fetchRecentOrders();
-  loadAnalytics();
-}
+  @override
+  void onInit() {
+    super.onInit();
+    tabController = TabController(length: 4, vsync: this);
+    fetchAllShops();
+    fetchPendingShops();
+    fetchAllUsers();
+    loadAnalytics();
+  }
 
-// Add this in onClose() to dispose the controller
-@override
-void onClose() {
-  searchController.dispose();
-  tabController.dispose();
-  super.onClose();
-}
+  // Add this in onClose() to dispose the controller
+  @override
+  void onClose() {
+    searchController.dispose();
+    tabController.dispose();
+    super.onClose();
+  }
   
   // Fetch all pending shop applications
   Future<void> fetchPendingShops() async {
-    isLoadingShops.value = true;
+    isLoadingPendingShops.value = true;
     
-    try {
-      final shopsList = await _supabaseService.fetchShopsByStatus(ShopStatus.pending.value);
-      pendingShops.value = shopsList;
-    } catch (e) {
-      debugPrint('Error in fetchPendingShops: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to load pending shops: ${e.toString()}', isError: true);
-    } finally {
-      isLoadingShops.value = false;
-    }
+    final response = await _supabaseService.fetchShopsByStatus(ShopStatus.pending.value);
+    pendingShops.clear();
+    pendingShops.addAll(response);
+    isLoadingPendingShops.value = false;
   }
   
   // Fetch all shops
-  Future<void> fetchShops() async {
+  Future<void> fetchAllShops() async {
     isLoadingShops.value = true;
     
-    try {
-      final shopsList = await _supabaseService.fetchAllShops();
-      shops.value = shopsList;
-    } catch (e) {
-      debugPrint('Error in fetchShops: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to load shops: ${e.toString()}', isError: true);
-    } finally {
-      isLoadingShops.value = false;
-    }
+    final response = await _supabaseService.fetchAllShops();
+    allShops.clear();
+    allShops.addAll(response);
+    filteredShops.clear();
+    filteredShops.addAll(response);
+    pendingShopCount.value = response.where((shop) => shop.status == 'pending').length;
+    isLoadingShops.value = false;
   }
   
   // Fetch users
   Future<void> fetchUsers() async {
     isLoadingUsers.value = true;
     
-    try {
-      final usersList = await _supabaseService.fetchAllUsers();
-      users.value = usersList;
-    } catch (e) {
-      debugPrint('Error in fetchUsers: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to load users: ${e.toString()}', isError: true);
-    } finally {
-      isLoadingUsers.value = false;
-    }
+    final usersList = await _supabaseService.fetchAllUsers();
+    users.clear();
+    users.addAll(usersList);
+    isLoadingUsers.value = false;
   }
   
   // Fetch recent orders
   Future<void> fetchRecentOrders() async {
     isLoadingOrders.value = true;
     
-    try {
-      final ordersList = await _supabaseService.fetchRecentOrders();
-      recentOrders.value = ordersList;
-      
-      // Process order status data for analytics
-      orderStatusData.value = {
-        OrderStatus.pending.value: 0,
-        OrderStatus.accepted.value: 0,
-        OrderStatus.inProgress.value: 0,
-        OrderStatus.delivered.value: 0,
-        OrderStatus.cancelled.value: 0,
-      };
-      
-      for (var order in ordersList) {
-        if (orderStatusData.containsKey(order.status)) {
-          orderStatusData[order.status] = (orderStatusData[order.status] ?? 0) + 1;
-        }
+    final ordersList = await _supabaseService.fetchRecentOrders();
+    recentOrders.clear();
+    recentOrders.addAll(ordersList);
+    
+    // Process order status data for analytics
+    orderStatusData.clear();
+    orderStatusData.addAll({
+      OrderStatus.pending.value: 0,
+      OrderStatus.accepted.value: 0,
+      OrderStatus.inProgress.value: 0,
+      OrderStatus.delivered.value: 0,
+      OrderStatus.cancelled.value: 0,
+    });
+    
+    for (var order in ordersList) {
+      if (orderStatusData.containsKey(order.status)) {
+        orderStatusData[order.status] = (orderStatusData[order.status] ?? 0) + 1;
       }
-    } catch (e) {
-      debugPrint('Error in fetchRecentOrders: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to load orders: ${e.toString()}', isError: true);
-    } finally {
-      isLoadingOrders.value = false;
     }
+    isLoadingOrders.value = false;
   }
   
   // Load analytics data
   Future<void> loadAnalytics() async {
     isLoadingAnalytics.value = true;
     
-    try {
-      // Get summary data
-      final summaryData = await _supabaseService.fetchAnalyticsSummary();
-      analytics.value = summaryData;
-      
-      // Get daily sales data for the chart
-      final sales = await _supabaseService.fetchDailySalesData(
-        startDate.value,
-        endDate.value,
-      );
-      dailySalesData.value = sales;
-      
-      // Get shop category distribution
-      final categoryData = await _supabaseService.fetchShopCategoryDistribution();
-      shopCategoryData.value = categoryData;
-      
-      // Process analytics data
-      _processAnalyticsData();
-      
-    } catch (e) {
-      debugPrint('Error in loadAnalytics: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to load analytics: ${e.toString()}', isError: true);
-    } finally {
-      isLoadingAnalytics.value = false;
+    // Fetch data for the current date range
+    final start = startDate.value;
+    final end = endDate.value;
+    
+    // Fetch order data for revenue and status distribution
+    final orders = await _supabaseService.fetchOrdersByDateRange(start, end);
+    
+    // Calculate total revenue and orders
+    double revenue = 0.0;
+    for (var order in orders) {
+      revenue += order.totalAmount;
     }
-  }
-  
-  // Process analytics data for UI
-  void _processAnalyticsData() {
-    // Process summary metrics
-    totalRevenue.value = analytics['total_revenue'] ?? 0.0;
-    totalOrders.value = analytics['total_orders'] ?? 0;
-    activeShops.value = analytics['active_shops'] ?? 0;
-    newUsers.value = analytics['new_users'] ?? 0;
-    
-    // Process growth metrics
-    revenueGrowth.value = analytics['revenue_growth'] ?? 0.0;
-    ordersGrowth.value = analytics['orders_growth'] ?? 0.0;
-    shopsGrowth.value = analytics['shops_growth'] ?? 0.0;
-    usersGrowth.value = analytics['users_growth'] ?? 0.0;
-    
-    // Process daily revenue data
-    dailyRevenue.value = dailySalesData.map((data) => DailyRevenueData(
-      date: DateTime.parse(data['date']),
-      revenue: (data['revenue'] as num).toDouble(),
-    )).toList();
+    totalRevenue.value = revenue;
+    totalOrders.value = orders.length;
     
     // Process order status distribution
-    orderStatusDistribution.value = orderStatusData.entries.map((entry) => OrderStatusData(
-      status: entry.key,
-      count: entry.value,
-    )).toList();
+    Map<String, int> statusCounts = {
+      'pending': 0,
+      'processing': 0,
+      'shipped': 0,
+      'delivered': 0,
+      'cancelled': 0
+    };
+    for (var order in orders) {
+      statusCounts[order.status] = (statusCounts[order.status] ?? 0) + 1;
+    }
+    orderStatusData.clear();
+    orderStatusData.addAll(statusCounts);
+    orderStatusDistribution.clear();
+    orderStatusDistribution.addAll(statusCounts.entries
+        .map((e) => OrderStatusData(status: e.key, count: e.value))
+        .toList());
+    
+    // Fetch shop data
+    final response = await _supabaseService.fetchAllShops();
+    final shopsList = <dynamic>[];
+    shopsList.addAll(response);
+    activeShops.value = shopsList.where((shop) {
+      if (shop is Map<dynamic, dynamic>) {
+        return shop['status'] == 'approved';
+      }
+      return false;
+    }).length;
     
     // Process shop category distribution
-    shopCategoryDistribution.value = shopCategoryData.map((data) => ShopCategoryData(
-      category: data['category'],
-      count: data['count'],
-    )).toList();
+    Map<String, int> categoryCounts = {};
+    for (var shopData in shopsList) {
+      // Directly access raw data from the response
+      String category = 'Unknown';
+      if (shopData is Map<dynamic, dynamic>) {
+        category = (shopData['shop_category'] as String?) ?? (shopData['category'] as String?) ?? 'Unknown';
+      }
+      if (category.isNotEmpty) {
+        categoryCounts[category] = (categoryCounts[category] ?? 0) + 1;
+      }
+    }
+    shopCategoryDistribution.clear();
+    shopCategoryDistribution.addAll(categoryCounts.entries
+        .map((e) => ShopCategoryData(category: e.key, count: e.value))
+        .toList());
     
-    // Process user growth data (mocked data for now)
-    userGrowthData.value = _generateMockUserGrowthData();
+    // Fetch user data for growth metrics
+    final usersList = await _supabaseService.fetchAllUsers();
+    newUsers.value = usersList.where((user) => 
+        user.createdAt.isAfter(start) && user.createdAt.isBefore(end)).length;
     
-    // Process top shops (mocked data for now)
-    topShops.value = _generateMockTopShopsData();
-  }
-  
-  // Generate mock user growth data
-  List<UserGrowthData> _generateMockUserGrowthData() {
-    final List<UserGrowthData> data = [];
-    final now = DateTime.now();
-    
-    for (int i = 0; i < 7; i++) {
-      final date = now.subtract(Duration(days: 6 - i));
-      data.add(UserGrowthData(
-        date: date,
-        customers: 10 + (i * 3) + (date.day % 5),
-        shopOwners: 5 + (i * 1) + (date.day % 3),
-      ));
+    // Process user growth data - group by date
+    Map<DateTime, Map<String, int>> userGrowthByDate = {};
+    for (var user in usersList) {
+      // Truncate time information, keep only date
+      DateTime userDate = DateTime(user.createdAt.year, user.createdAt.month, user.createdAt.day);
+      if (userDate.isAfter(start.subtract(const Duration(days: 1))) && userDate.isBefore(end.add(const Duration(days: 1)))) {
+        if (!userGrowthByDate.containsKey(userDate)) {
+          userGrowthByDate[userDate] = {'customer': 0, 'shop_owner': 0};
+        }
+        if (user.role == 'customer') {
+          userGrowthByDate[userDate]!['customer'] = userGrowthByDate[userDate]!['customer']! + 1;
+        } else if (user.role == 'shop_owner') {
+          userGrowthByDate[userDate]!['shop_owner'] = userGrowthByDate[userDate]!['shop_owner']! + 1;
+        }
+      }
     }
     
-    return data;
+    // Convert to list and sort by date
+    var sortedDates = userGrowthByDate.keys.toList()..sort();
+    userGrowthData.clear();
+    userGrowthData.addAll(sortedDates.map((date) => 
+        UserGrowthData(
+          date: date, 
+          customers: userGrowthByDate[date]!['customer']!, 
+          shopOwners: userGrowthByDate[date]!['shop_owner']!)
+        ).toList());
+    
+    // Process top shops based on order revenue
+    Map<String, Map<String, dynamic>> shopPerformance = {};
+    for (var order in orders) {
+      // Find the shop in the raw data list
+      dynamic shop = shopsList.firstWhere((s) {
+        if (s is Map<dynamic, dynamic>) {
+          return s['id'] == order.shopId;
+        }
+        return false;
+      }, orElse: () => {
+        'id': order.shopId,
+        'name': 'Unknown Shop',
+        'city': 'Unknown',
+        'shop_category': 'Unknown'
+      });
+      String category = 'Unknown';
+      String name = 'Unknown Shop';
+      String city = 'Unknown';
+      if (shop is Map<dynamic, dynamic>) {
+        category = (shop['shop_category'] as String?) ?? (shop['category'] as String?) ?? 'Unknown';
+        name = (shop['name'] as String?) ?? 'Unknown Shop';
+        city = (shop['city'] as String?) ?? 'Unknown';
+      }
+      if (!shopPerformance.containsKey(order.shopId)) {
+        shopPerformance[order.shopId] = {
+          'name': name,
+          'category': category,
+          'city': city,
+          'revenue': 0.0,
+          'orders': 0
+        };
+      }
+      shopPerformance[order.shopId]!['revenue'] += order.totalAmount;
+      shopPerformance[order.shopId]!['orders'] += 1;
+    }
+    
+    // Convert to list and sort by revenue
+    var sortedShops = shopPerformance.entries.toList()
+      ..sort((a, b) => b.value['revenue'].compareTo(a.value['revenue']));
+    topShopsData.clear();
+    topShopsData.addAll(sortedShops.take(5).map((entry) => 
+        TopShopData(
+          id: entry.key,
+          name: entry.value['name'],
+          category: entry.value['category'],
+          city: entry.value['city'],
+          revenue: entry.value['revenue'],
+          orders: entry.value['orders'])
+        ).toList());
+    
+    // Process daily revenue data
+    Map<DateTime, double> dailyRevenueMap = {};
+    for (var order in orders) {
+      DateTime orderDate = DateTime(order.createdAt.year, order.createdAt.month, order.createdAt.day);
+      if (orderDate.isAfter(start.subtract(const Duration(days: 1))) && orderDate.isBefore(end.add(const Duration(days: 1)))) {
+        dailyRevenueMap[orderDate] = (dailyRevenueMap[orderDate] ?? 0.0) + order.totalAmount;
+      }
+    }
+    var sortedRevenueDates = dailyRevenueMap.keys.toList()..sort();
+    dailyRevenue.clear();
+    dailyRevenue.addAll(sortedRevenueDates.map((date) => 
+        DailyRevenueData(date: date, revenue: dailyRevenueMap[date]!)).toList());
+    
+    // Calculate growth metrics (simplified, comparing halves of the selected period)
+    if (orders.isNotEmpty && start.difference(end).inDays.abs() > 1) {
+      final midPoint = start.add(Duration(days: (end.difference(start).inDays / 2).round()));
+      final firstHalfOrders = orders.where((o) => o.createdAt.isBefore(midPoint)).toList();
+      final secondHalfOrders = orders.where((o) => o.createdAt.isAfter(midPoint) || o.createdAt.isAtSameMomentAs(midPoint)).toList();
+      
+      double firstHalfRevenue = firstHalfOrders.fold(0.0, (sum, o) => sum + o.totalAmount);
+      double secondHalfRevenue = secondHalfOrders.fold(0.0, (sum, o) => sum + o.totalAmount);
+      
+      if (firstHalfRevenue > 0) {
+        revenueGrowth.value = ((secondHalfRevenue - firstHalfRevenue) / firstHalfRevenue) * 100;
+      } else if (secondHalfRevenue > 0) {
+        revenueGrowth.value = 100.0;
+      }
+      
+      int firstHalfOrderCount = firstHalfOrders.length;
+      int secondHalfOrderCount = secondHalfOrders.length;
+      if (firstHalfOrderCount > 0) {
+        ordersGrowth.value = ((secondHalfOrderCount - firstHalfOrderCount) / firstHalfOrderCount) * 100;
+      } else if (secondHalfOrderCount > 0) {
+        ordersGrowth.value = 100.0;
+      }
+      
+      // Similar calculation for shops and users can be implemented if we store historical data
+      shopsGrowth.value = 0.0; // Placeholder - requires historical data
+      usersGrowth.value = 0.0; // Placeholder - requires historical data
+    } else {
+      revenueGrowth.value = 0.0;
+      ordersGrowth.value = 0.0;
+      shopsGrowth.value = 0.0;
+      usersGrowth.value = 0.0;
+    }
+    isLoadingAnalytics.value = false;
   }
-  
-  // Generate mock top shops data
-  List<TopShopData> _generateMockTopShopsData() {
-    final List<TopShopData> data = [];
-    
-    data.add(TopShopData(
-      id: '1',
-      name: 'Fashion Hub',
-      category: 'Clothing',
-      city: 'Mumbai',
-      revenue: 58000,
-      orders: 145,
-    ));
-    
-    data.add(TopShopData(
-      id: '2',
-      name: 'Tech World',
-      category: 'Electronics',
-      city: 'Delhi',
-      revenue: 42000,
-      orders: 87,
-    ));
-    
-    data.add(TopShopData(
-      id: '3',
-      name: 'Home Decor',
-      category: 'Home & Kitchen',
-      city: 'Bangalore',
-      revenue: 36500,
-      orders: 120,
-    ));
-    
-    data.add(TopShopData(
-      id: '4',
-      name: 'Organic Foods',
-      category: 'Grocery',
-      city: 'Chennai',
-      revenue: 28000,
-      orders: 230,
-    ));
-    
-    data.add(TopShopData(
-      id: '5',
-      name: 'Book Haven',
-      category: 'Books & Media',
-      city: 'Kolkata',
-      revenue: 18500,
-      orders: 95,
-    ));
-    
-    return data;
-  }
-  
+
   // Refresh analytics data
   Future<void> refreshAnalytics() async {
     await loadAnalytics();
   }
-  
+
   // Update analytics date range
   void updateDateRange(DateTime start, DateTime end) {
     startDate.value = start;
     endDate.value = end;
     loadAnalytics();
   }
-  
+
   // Update analytics timeframe
   void updateAnalyticsTimeframe() {
     switch (selectedTimeframe.value) {
@@ -352,336 +394,156 @@ void onClose() {
     
     loadAnalytics();
   }
-  
+
   // Navigate to shop details
   void goToShopDetails(String shopId) {
     Get.toNamed('/admin/shops/details', arguments: shopId);
   }
-  
-  // Approve shop
-  Future<void> approveShop(String shopId) async {
-    isProcessing.value = true;
+
+  Future<void> fetchAllUsers() async {
+    isLoadingUsers.value = true;
     
-    try {
-      final success = await _supabaseService.updateShopStatus(shopId, ShopStatus.approved.value);
-      if (success) {
-        // Update local lists
-        final index = pendingShops.indexWhere((shop) => shop.id == shopId);
-        if (index != -1) {
-          final approvedShop = pendingShops[index].copyWith(
-            status: ShopStatus.approved.value,
-            updatedAt: DateTime.now(),
-          );
-          
-          pendingShops.removeAt(index);
-          
-          // Also update in all shops list if it exists there
-          final allShopsIndex = shops.indexWhere((shop) => shop.id == shopId);
-          if (allShopsIndex != -1) {
-            shops[allShopsIndex] = approvedShop;
-          } else {
-            shops.add(approvedShop);
-          }
-        }
-        
-        Helpers.showSnackbar('Success', 'Shop approved successfully');
-      } else {
-        Helpers.showSnackbar('Error', 'Failed to approve shop', isError: true);
-      }
-    } catch (e) {
-      debugPrint('Error in approveShop: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to approve shop: ${e.toString()}', isError: true);
-    } finally {
-      isProcessing.value = false;
-    }
-  }
-  
-  // Reject shop
-  Future<void> rejectShop(String shopId) async {
-    isProcessing.value = true;
-    
-    try {
-      final success = await _supabaseService.updateShopStatus(shopId, ShopStatus.rejected.value);
-      if (success) {
-        // Update local lists
-        final index = pendingShops.indexWhere((shop) => shop.id == shopId);
-        if (index != -1) {
-          final rejectedShop = pendingShops[index].copyWith(
-            status: ShopStatus.rejected.value,
-            updatedAt: DateTime.now(),
-          );
-          
-          pendingShops.removeAt(index);
-          
-          // Also update in all shops list if it exists there
-          final allShopsIndex = shops.indexWhere((shop) => shop.id == shopId);
-          if (allShopsIndex != -1) {
-            shops[allShopsIndex] = rejectedShop;
-          }
-        }
-        
-        Helpers.showSnackbar('Success', 'Shop application rejected');
-      } else {
-        Helpers.showSnackbar('Error', 'Failed to reject shop application', isError: true);
-      }
-    } catch (e) {
-      debugPrint('Error in rejectShop: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to reject shop: ${e.toString()}', isError: true);
-    } finally {
-      isProcessing.value = false;
-    }
-  }
-  
-  // Suspend shop
-  Future<void> suspendShop(String shopId) async {
-    isProcessing.value = true;
-    
-    try {
-      final success = await _supabaseService.updateShopStatus(shopId, ShopStatus.rejected.value);
-      if (success) {
-        // Update local list
-        final index = shops.indexWhere((shop) => shop.id == shopId);
-        if (index != -1) {
-          shops[index] = shops[index].copyWith(
-            status: ShopStatus.rejected.value,
-            updatedAt: DateTime.now(),
-          );
-        }
-        
-        Helpers.showSnackbar('Success', 'Shop suspended successfully');
-      } else {
-        Helpers.showSnackbar('Error', 'Failed to suspend shop', isError: true);
-      }
-    } catch (e) {
-      debugPrint('Error in suspendShop: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to suspend shop: ${e.toString()}', isError: true);
-    } finally {
-      isProcessing.value = false;
-    }
-  }
-
-
-void searchUsers(String query) {
-  if (query.isEmpty) {
-    filteredUsers.value = users;
-  } else {
-    filteredUsers.value = users.where((user) => 
-      user.email.toLowerCase().contains(query.toLowerCase()) || 
-      (user.full_name?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
-      (user.phone?.toLowerCase().contains(query.toLowerCase()) ?? false)
-    ).toList();
-  }
-}
-
-void filterUsersByRole(String role) {
-  selectedUserRole.value = role;
-  if (role.isEmpty) {
-    filteredUsers.value = users;
-  } else {
-    filteredUsers.value = users.where((user) => user.role == role).toList();
-  }
-}
-
-Future<void> fetchAllUsers() async {
-  isLoadingUsers.value = true;
-  
-  try {
     final usersList = await _supabaseService.fetchAllUsers();
-    users.value = usersList;
-    filteredUsers.value = usersList;
+    debugPrint('Fetched ${usersList.length} users from Supabase');
+    final authController = Get.find<AuthController>();
+    debugPrint('Current user ID: ${authController.currentUser.value?.id ?? "Not logged in"}');
+    debugPrint('Current user role: ${authController.currentUser.value?.role ?? "Not available"}');
+    for (var user in usersList) {
+      debugPrint('User: ${user.email}, Role: ${user.role}, ID: ${user.id}, Active: ${user.isActive}');
+    }
+    users.clear();
+    users.addAll(usersList);
+    filteredUsers.clear();
+    filteredUsers.addAll(usersList);
     
     // Update counts
     totalUsers.value = usersList.length;
     customerCount.value = usersList.where((user) => user.role == 'customer').length;
     shopOwnerCount.value = usersList.where((user) => user.role == 'shop_owner').length;
-  } catch (e) {
-    debugPrint('Error in fetchAllUsers: ${e.toString()}');
-    Helpers.showSnackbar('Error', 'Failed to load users: ${e.toString()}', isError: true);
-  } finally {
     isLoadingUsers.value = false;
   }
-}
 
-Future<ShopModel?> getShopForOwner(String userId) async {
-  try {
-    return await _supabaseService.fetchShopByUserId(userId);
-  } catch (e) {
-    debugPrint('Error in getShopForOwner: ${e.toString()}');
-    return null;
-  }
-}
-
-// Future<void> toggleUserActiveStatus(String userId, bool isActive) async {
-//   isProcessing.value = true;
-  
-//   try {
-//     final success = await _supabaseService.updateUserActiveStatus(userId, isActive);
-//     if (success) {
-//       // Update local list
-//       final index = users.indexWhere((user) => user.id == userId);
-//       if (index != -1) {
-//         users[index] = users[index].copyWith(isActive: isActive);
-        
-//         // Also update in filtered list if it exists there
-//         final filteredIndex = filteredUsers.indexWhere((user) => user.id == userId);
-//         if (filteredIndex != -1) {
-//           filteredUsers[filteredIndex] = filteredUsers[filteredIndex].copyWith(isActive: isActive);
-//         }
-//       }
-      
-//       Helpers.showSnackbar(
-//         'Success', 
-//         isActive ? 'User account enabled successfully' : 'User account disabled successfully'
-//       );
-//     } else {
-//       Helpers.showSnackbar('Error', 'Failed to update user status', isError: true);
-//     }
-//   } catch (e) {
-//     debugPrint('Error in toggleUserActiveStatus: ${e.toString()}');
-//     Helpers.showSnackbar('Error', 'Failed to update user status: ${e.toString()}', isError: true);
-//   } finally {
-//     isProcessing.value = false;
-//   }
-// }
-
-// Add this method to the AdminController class
-Future<void> toggleUserActiveStatus(String userId, bool isActive) async {
-  isProcessing.value = true;
-  
-  try {
-    final success = await _supabaseService.updateUserActiveStatus(userId, isActive);
-    if (success) {
-      // Update local list
-      final index = users.indexWhere((user) => user.id == userId);
-      if (index != -1) {
-        users[index] = users[index].copyWith(isActive: isActive);
-        
-        // Also update in filtered list if it exists there
-        final filteredIndex = filteredUsers.indexWhere((user) => user.id == userId);
-        if (filteredIndex != -1) {
-          filteredUsers[filteredIndex] = filteredUsers[filteredIndex].copyWith(isActive: isActive);
-        }
-      }
-      
-      Helpers.showSnackbar(
-        'Success', 
-        isActive ? 'User account enabled successfully' : 'User account disabled successfully'
-      );
+  void searchUsers(String query) {
+    if (query.isEmpty) {
+      filteredUsers.value = users;
     } else {
-      Helpers.showSnackbar('Error', 'Failed to update user status', isError: true);
+      filteredUsers.value = users.where((user) => 
+        user.email.toLowerCase().contains(query.toLowerCase()) || 
+        (user.full_name?.toLowerCase().contains(query.toLowerCase()) ?? false) ||
+        (user.phone?.toLowerCase().contains(query.toLowerCase()) ?? false)
+      ).toList();
     }
-  } catch (e) {
-    debugPrint('Error in toggleUserActiveStatus: ${e.toString()}');
-    Helpers.showSnackbar('Error', 'Failed to update user status: ${e.toString()}', isError: true);
-  } finally {
-    isProcessing.value = false;
   }
-}
 
-
-
-Future<void> deleteUser(String userId) async {
-  isProcessing.value = true;
-  
-  try {
-    final success = await _supabaseService.deleteUser(userId);
-    if (success) {
-      // Remove from local lists
-      users.removeWhere((user) => user.id == userId);
-      filteredUsers.removeWhere((user) => user.id == userId);
-      
-      // Update counts
-      totalUsers.value = users.length;
-      customerCount.value = users.where((user) => user.role == 'customer').length;
-      shopOwnerCount.value = users.where((user) => user.role == 'shop_owner').length;
-      
-      Helpers.showSnackbar('Success', 'User deleted successfully');
+  void filterUsersByRole(String role) {
+    selectedUserRole.value = role;
+    if (role.isEmpty) {
+      filteredUsers.value = users;
     } else {
-      Helpers.showSnackbar('Error', 'Failed to delete user', isError: true);
+      filteredUsers.value = users.where((user) => user.role == role).toList();
     }
-  } catch (e) {
-    debugPrint('Error in deleteUser: ${e.toString()}');
-    Helpers.showSnackbar('Error', 'Failed to delete user: ${e.toString()}', isError: true);
-  } finally {
-    isProcessing.value = false;
   }
-}
 
+  void filterShopsByStatus(String status) {
+    selectedShopStatus.value = status;
+    if (status.isEmpty) {
+      filteredShops.value = shops;
+    } else {
+      filteredShops.value = shops.where((shop) => shop.status == status).toList();
+    }
+  }
 
-  
-  // Update user role
-  Future<void> updateUserRole(String userId, String newRole) async {
-    isProcessing.value = true;
-    
-    try {
-      final success = await _supabaseService.updateUserRole(userId, newRole);
-      if (success) {
-        // Update local list
-        final index = users.indexWhere((user) => user.id == userId);
-        if (index != -1) {
-          users[index] = users[index].copyWith(
-            role: newRole,
-          );
-        }
-        
-        Helpers.showSnackbar('Success', 'User role updated successfully');
-      } else {
-        Helpers.showSnackbar('Error', 'Failed to update user role', isError: true);
-      }
-    } catch (e) {
-      debugPrint('Error in updateUserRole: ${e.toString()}');
-      Helpers.showSnackbar('Error', 'Failed to update user role: ${e.toString()}', isError: true);
-    } finally {
-      isProcessing.value = false;
-    }
+  Future<ShopModel?> getShopForOwner(String userId) async {
+    final response = await _supabaseService.fetchShopByUserId(userId);
+    return response;
   }
-  
-  // Filter shops by status
-  List<ShopModel> get filteredShops {
-    if (shopStatusFilter.value.isEmpty || shopStatusFilter.value == 'all') {
-      return shops;
+
+  Future<bool> updateUserRole(String userId, String newRole) async {
+    await _supabaseService.updateUserRole(userId, newRole);
+    // Update local list
+    final userIndex = users.indexWhere((u) => u.id == userId);
+    if (userIndex != -1) {
+      users[userIndex] = users[userIndex].copyWith(role: newRole);
+      filteredUsers.value = [...filteredUsers];
     }
-    return shops.where((shop) => shop.status == shopStatusFilter.value).toList();
+    return true;
   }
-  
-  
-  
-  // Get counts for dashboard
-  int get totalShopsCount => shops.length;
-  int get pendingShopsCount => shops.where((shop) => shop.status == ShopStatus.pending.value).length;
-  int get activeShopsCount => shops.where((shop) => shop.status == ShopStatus.approved.value).length;
-  int get suspendedShopsCount => shops.where((shop) => shop.status == ShopStatus.rejected.value).length;
-  
-  int get totalUsersCount => users.length;
-  int get customerUsersCount => users.where((user) => user.role == 'customer').length;
-  int get shopOwnerUsersCount => users.where((user) => user.role == 'shop_owner').length;
-  int get adminUsersCount => users.where((user) => user.role == 'admin').length;
-  
-  // Format date for display
+
+  Future<bool> toggleUserActiveStatus(String userId, bool isActive) async {
+    await _supabaseService.updateUserActiveStatus(userId, isActive);
+    // Update local list
+    final userIndex = users.indexWhere((u) => u.id == userId);
+    if (userIndex != -1) {
+      users[userIndex] = users[userIndex].copyWith(isActive: isActive);
+      filteredUsers.value = [...filteredUsers];
+    }
+    return true;
+  }
+
+  Future<bool> deleteUser(String userId) async {
+    await _supabaseService.deleteUser(userId);
+    users.removeWhere((u) => u.id == userId);
+    filteredUsers.value = [...filteredUsers];
+    return true;
+  }
+
+  Future<bool> approveShop(String shopId, String ownerId) async {
+    await _supabaseService.updateShopStatus(shopId, 'approved');
+    await _supabaseService.updateUserRole(ownerId, 'shop_owner');
+    final shopIndex = shops.indexWhere((s) {
+      // Use raw data if needed, but for now assume id is accessible
+      return s.id == shopId;
+    });
+    if (shopIndex != -1) {
+      shops[shopIndex] = shops[shopIndex].copyWith(status: 'approved');
+      filteredShops.clear();
+      filteredShops.addAll(shops);
+      pendingShopCount.value = shops.where((shop) => shop.status == 'pending').length;
+    }
+    return true;
+  }
+
+  Future<bool> rejectShop(String shopId, String reason) async {
+    await _supabaseService.updateShopStatus(shopId, 'rejected');
+    // You might want to store the rejection reason somewhere
+    final shopIndex = shops.indexWhere((s) {
+      // Use raw data if needed, but for now assume id is accessible
+      return s.id == shopId;
+    });
+    if (shopIndex != -1) {
+      shops[shopIndex] = shops[shopIndex].copyWith(status: 'rejected');
+      filteredShops.clear();
+      filteredShops.addAll(shops);
+      pendingShopCount.value = shops.where((shop) => shop.status == 'pending').length;
+    }
+    return true;
+  }
+
   String formatDate(DateTime date) {
     return DateFormat('MMM d, yyyy').format(date);
   }
+
 }
 
 // Data models for analytics
 class DailyRevenueData {
   final DateTime date;
   final double revenue;
-  
+
   DailyRevenueData({required this.date, required this.revenue});
 }
 
 class OrderStatusData {
   final String status;
   final int count;
-  
+
   OrderStatusData({required this.status, required this.count});
 }
 
 class ShopCategoryData {
   final String category;
   final int count;
-  
+
   ShopCategoryData({required this.category, required this.count});
 }
 
@@ -689,7 +551,7 @@ class UserGrowthData {
   final DateTime date;
   final int customers;
   final int shopOwners;
-  
+
   UserGrowthData({required this.date, required this.customers, required this.shopOwners});
 }
 
@@ -700,7 +562,7 @@ class TopShopData {
   final String city;
   final double revenue;
   final int orders;
-  
+
   TopShopData({
     required this.id,
     required this.name,

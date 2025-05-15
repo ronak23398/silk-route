@@ -707,7 +707,7 @@ class AdminAnalyticsView extends GetView<AdminController> {
             ),
             const SizedBox(height: 16),
             Obx(() {
-              if (controller.topShops.isEmpty) {
+              if (controller.topShopsData.isEmpty) {
                 return const Center(
                   child: Padding(
                     padding: EdgeInsets.all(16.0),
@@ -719,32 +719,32 @@ class AdminAnalyticsView extends GetView<AdminController> {
               return ListView.separated(
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
-                itemCount: controller.topShops.length,
+                itemCount: controller.topShopsData.length,
                 separatorBuilder: (context, index) => const Divider(),
                 itemBuilder: (context, index) {
-                  final shop = controller.topShops[index];
+                  final shopData = controller.topShopsData[index];
                   return ListTile(
                     leading: CircleAvatar(
                       backgroundColor: Theme.of(context).primaryColor,
-                      child: Text('${index + 1}', style: const TextStyle(color: Colors.white)),
+                      child: Text(shopData.name[0]),
                     ),
-                    title: Text(shop.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('${shop.city} • ${shop.category}'),
+                    title: Text(shopData.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('${shopData.city} • ${shopData.category}'),
                     trailing: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         Text(
-                          '₹${(shop.revenue)}',
+                          '₹${shopData.revenue}',
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Colors.green,
                           ),
                         ),
-                        Text('${shop.orders} orders'),
+                        Text('${shopData.orders} orders'),
                       ],
                     ),
-                    onTap: () => controller.goToShopDetails(shop.id),
+                    onTap: () => controller.goToShopDetails(shopData.id),
                   );
                 },
               );

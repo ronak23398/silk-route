@@ -5,16 +5,15 @@ import 'package:silk_route/app/routes/app_routes.dart';
 import 'package:silk_route/app/utils/constants.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-void main() async {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
   // Initialize Supabase
   await Supabase.initialize(
     url: Constants.supabaseUrl,
     anonKey: Constants.supabaseAnonKey,
-    
   );
-      
+  
   runApp(const MyApp());
 }
 
